@@ -1,0 +1,64 @@
+<style>
+	@page { size: A4 landscape; margin: 12mm 10mm; }
+	* { box-sizing: border-box; font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
+	body { color: #1f2937; font-size: 10px; }
+	.letterhead { margin-bottom: 12px; }
+	.doc-title { border-bottom: 3px solid #0f4c81; padding-bottom: 8px; margin-bottom: 6px; }
+	.doc-title h1 { font-size: 16px; color: #0f4c81; margin: 0; }
+	.filters-bar {
+		background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 4px;
+		padding: 5px 8px; margin-bottom: 10px; font-size: 9px; color: #374151;
+	}
+	.filters-bar b { color: #0f4c81; }
+	table.ledger { width: 100%; border-collapse: collapse; }
+	table.ledger thead th {
+		background: #0f4c81; color: #fff; font-size: 8.5px;
+		padding: 6px 4px; text-align: left; font-weight: 600;
+	}
+	table.ledger td { padding: 5px 4px; font-size: 9px; border-bottom: 1px solid #eef0f2; }
+	table.ledger tbody tr:nth-child(even) { background: #f9fafb; }
+	.text-right { text-align: right; }
+	.footer { margin-top: 6px; font-size: 8px; color: #6b7280; text-align: right; }
+</style>
+
+{% if letter_head_html %}
+<div class="letterhead">{{ letter_head_html }}</div>
+{% endif %}
+
+<div class="doc-title"><h1>{{ title }}</h1></div>
+
+<div class="filters-bar">
+	<b>Filters:</b>
+	{% if filters.company %}&nbsp;Company: {{ filters.company }}{% endif %}
+	{% if filters.from_date %}&nbsp;|&nbsp;From: {{ filters.from_date }}{% endif %}
+	{% if filters.to_date %}&nbsp;|&nbsp;To: {{ filters.to_date }}{% endif %}
+	{% if filters.report_date %}&nbsp;|&nbsp;As on: {{ filters.report_date }}{% endif %}
+	{% if filters.customer %}&nbsp;|&nbsp;Customer: {{ filters.customer }}{% endif %}
+	{% if filters.supplier %}&nbsp;|&nbsp;Supplier: {{ filters.supplier }}{% endif %}
+	{% if filters.party_type and filters.party %}&nbsp;|&nbsp;Party: {{ filters.party_type }} - {{ filters.party }}{% endif %}
+	{% if filters.account %}&nbsp;|&nbsp;Account: {{ filters.account }}{% endif %}
+	{% if filters.group_by %}&nbsp;|&nbsp;Group by: {{ filters.group_by }}{% endif %}
+	{% if filters.territory %}&nbsp;|&nbsp;Territory: {{ filters.territory }}{% endif %}
+</div>
+
+<table class="ledger">
+	<thead>
+		<tr>
+			{% for col in columns %}
+			<th class="{{ 'text-right' if col.fieldtype == 'Currency' else '' }}">{{ col.label }}</th>
+			{% endfor %}
+		</tr>
+	</thead>
+	<tbody>
+		{% for row in rows %}
+		<tr>
+			{% for cell in row %}
+			{% set col = columns[loop.index0] %}
+			<td class="{{ 'text-right' if col.fieldtype == 'Currency' else '' }}">{{ cell }}</td>
+			{% endfor %}
+		</tr>
+		{% endfor %}
+	</tbody>
+</table>
+
+<div class="footer">Generated on {{ today }}</div>
