@@ -15,7 +15,7 @@ after_install = "ar_pdf_export.install.after_install"
 # Re-runs the same setup safely if you bench migrate
 after_migrate = "ar_pdf_export.install.after_install"
 
-# Global desk JS - adds the "Branded PDF" button on the reports listed in
-# REPORT_EXECUTE_PATHS (General Ledger, Accounts Receivable / Payable and
-# their Summaries, Sales Register).
-app_include_js = ["/assets/ar_pdf_export/js/branded_button.js"]
+# Global desk JS - adds the "Branded PDF" button on every query report
+# (dynamic; the server endpoint runs any report). The ?v= query busts the
+# browser cache on each deploy so the latest dialog options are loaded.
+app_include_js = ["/assets/ar_pdf_export/js/branded_button.js?v=20261002d"]

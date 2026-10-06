@@ -13,14 +13,9 @@
 (function () {
 	"use strict";
 
-	var BRANDED_REPORTS = [
-		"General Ledger",
-		"Accounts Receivable",
-		"Accounts Payable",
-		"Accounts Receivable Summary",
-		"Accounts Payable Summary",
-		"Sales Register",
-	];
+	// Dynamic: the "Branded PDF" button is shown on EVERY query report. The
+	// server-side endpoint runs any report generically (Script / Query /
+	// Report Builder / Custom Report), so no per-report list is needed.
 
 	function get_filter_values(report) {
 		if (report.get_filter_values) return report.get_filter_values();
@@ -56,7 +51,7 @@
 			.replace(/"/g, "&quot;");
 	}
 
-	function download_pdf(report_name, filters, only_fields) {
+	function download_pdf(report_name, filters, only_fields, letter_head, words_column, words_mode) {
 		var url =
 			frappe.urllib.get_full_url(
 				"/api/method/ar_pdf_export.utils.report_pdf.download_report_pdf"
@@ -70,24 +65,61 @@
 			url += "&only_fields=" + encodeURIComponent(JSON.stringify(only_fields));
 		}
 
+		if (letter_head) {
+			url += "&letter_head=" + encodeURIComponent(letter_head);
+		}
+
+		if (words_column) {
+			url += "&words_column=" + encodeURIComponent(words_column);
+		}
+
+		if (words_mode) {
+			url += "&words_mode=" + encodeURIComponent(words_mode);
+		}
+
 		window.open(url);
 	}
 
 	function open_column_picker(report, report_name) {
-		var columns = get_report_columns(report);
-
-		if (!columns.length) {
-			frappe.msgprint(
-				__("Report pehle run karein (filters set kar ke) phir Branded PDF dobara click karein.")
-			);
-			return;
-		}
+		var columns = get_report_columns(report) || [];
 
 		var dialog = new frappe.ui.Dialog({
 			title: __("Select Columns - {0}", [report_name]),
-			fields: [{ fieldtype: "HTML", fieldname: "columns" }],
+			fields: [
+				{
+					fieldtype: "Link",
+					fieldname: "letter_head",
+					label: __("Letter Head (blank = Company default)"),
+					options: "Letter Head",
+				},
+				{
+					fieldtype: "Check",
+					fieldname: "no_letter_head",
+					label: __("No letter head"),
+					default: 0,
+				},
+				{
+					fieldtype: "Select",
+					fieldname: "words_column",
+					label: __("Amount in Words - column"),
+					options: [__("Auto (last amount column)"), __("Off")].concat(
+						columns.map(function (c) {
+							return c.label;
+						})
+					),
+					default: __("Auto (last amount column)"),
+				},
+				{
+					fieldtype: "Select",
+					fieldname: "words_mode",
+					label: __("Amount in Words - basis"),
+					options: [__("Last row value"), __("Total (sum)")],
+					default: __("Last row value"),
+				},
+				{ fieldtype: "HTML", fieldname: "columns" },
+			],
 			primary_action_label: __("Download PDF"),
-			primary_action: function () {
+			primary_action: function (values) {
 				var $wrapper = dialog.fields_dict.columns.$wrapper;
 				var picked = $wrapper
 					.find("input.col-pick:checked")
@@ -96,18 +128,34 @@
 					})
 					.get();
 
-				if (!picked.length) {
-					frappe.msgprint(__("Kam se kam aik column select karein."));
-					return;
+				var only_fields = null;
+				if (columns.length) {
+					if (!picked.length) {
+						frappe.msgprint(__("Kam se kam aik column select karein."));
+						return;
+					}
+					if (picked.length < columns.length) {
+						only_fields = picked;
+					}
 				}
 
-				var only_fields = null;
-				if (picked.length < columns.length) {
-					only_fields = picked;
+				var lh = null;
+				if (values.no_letter_head) {
+					lh = "__none__";
+				} else if (values.letter_head) {
+					lh = values.letter_head;
 				}
+
+				var wc = values.words_column;
+				if (wc === __("Off")) {
+					wc = "__off__";
+				} else if (wc === __("Auto (last amount column)")) {
+					wc = "__auto__";
+				}
+				var wm = values.words_mode === __("Total (sum)") ? "sum" : "last";
 
 				dialog.hide();
-				download_pdf(report_name, get_filter_values(report), only_fields);
+				download_pdf(report_name, get_filter_values(report), only_fields, lh, wc, wm);
 			},
 		});
 
@@ -159,7 +207,7 @@
 
 	function add_button(report) {
 		var report_name = report.report_name;
-		if (BRANDED_REPORTS.indexOf(report_name) === -1) return;
+		if (!report_name) return;
 		if (!report.page || !report.page.add_inner_button) return;
 
 		report.page.add_inner_button(__("Branded PDF"), function () {
@@ -198,10 +246,93 @@
 		return true;
 	}
 
+	function open_grid_download(report) {
+		// Report Builder / List Report data lives only in the browser, so the
+		// server can't re-run it. Send the current columns + rows instead.
+		var cols = (report.columns || []).map(function (c) {
+			var df = c.docfield || {};
+			return {
+				label: c.content || c.id,
+				fieldname: c.id,
+				fieldtype: df.fieldtype || "Data",
+			};
+		});
+		var rows = (report.data || []).map(function (r) {
+			var o = {};
+			cols.forEach(function (c) {
+				var v = r[c.fieldname];
+				if (v && typeof v === "object" && v.value !== undefined) v = v.value;
+				o[c.fieldname] = v;
+			});
+			return o;
+		});
+		var filters = {};
+		try {
+			filters = report.get_filters ? report.get_filters() : {};
+		} catch (e) {
+			filters = {};
+		}
+		var url =
+			frappe.urllib.get_full_url(
+				"/api/method/ar_pdf_export.utils.report_pdf.download_grid_pdf"
+			) +
+			"?title=" +
+			encodeURIComponent(report.report_name || report.doctype || "Report") +
+			"&columns=" +
+			encodeURIComponent(JSON.stringify(cols)) +
+			"&rows=" +
+			encodeURIComponent(JSON.stringify(rows)) +
+			"&filters=" +
+			encodeURIComponent(JSON.stringify(filters || {}));
+		window.open(url);
+	}
+
+	function add_report_view_button(report) {
+		if (!report.page || !report.page.add_inner_button) return;
+		if (report.page.inner_toolbar && report.page.inner_toolbar.find(".branded-pdf-btn").length) {
+			return;
+		}
+		var btn = report.page.add_inner_button(__("Branded PDF"), function () {
+			open_grid_download(report);
+		});
+		if (btn && btn.addClass) btn.addClass("branded-pdf-btn");
+	}
+
+	function patch_report_view() {
+		var klass = frappe.views && frappe.views.ReportView;
+		if (!klass || !klass.prototype) return false;
+		if (klass.prototype.__branded_pdf_patched) return true;
+
+		var orig_setup = klass.prototype.setup_result_area;
+		if (typeof orig_setup === "function") {
+			klass.prototype.setup_result_area = function () {
+				var r = orig_setup.apply(this, arguments);
+				try {
+					add_report_view_button(this);
+				} catch (e) {}
+				return r;
+			};
+		}
+		var orig_after = klass.prototype.after_render;
+		if (typeof orig_after === "function") {
+			klass.prototype.after_render = function () {
+				var r = orig_after.apply(this, arguments);
+				try {
+					add_report_view_button(this);
+				} catch (e) {}
+				return r;
+			};
+		}
+		klass.prototype.__branded_pdf_patched = true;
+		return true;
+	}
+
 	(function init() {
-		// The QueryReport class is defined in the desk bundle; retry until it
-		// is available (app_include_js may run before the class is attached).
-		if (!patch_prototype()) {
+		// The report views are defined in the desk bundle; retry until both
+		// classes are available (app_include_js may run before they attach).
+		var ok = patch_prototype();
+		ok = patch_report_view() && ok;
+		if (!ok) {
 			setTimeout(init, 300);
 		}
 	})();
